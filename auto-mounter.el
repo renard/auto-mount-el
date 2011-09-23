@@ -5,7 +5,7 @@
 ;; Author: Sébastien Gross <seb•ɑƬ•chezwam•ɖɵʈ•org>
 ;; Keywords: emacs, 
 ;; Created: 2011-09-22
-;; Last changed: 2011-09-23 17:38:22
+;; Last changed: 2011-09-23 17:57:01
 ;; Licence: WTFPL, grab your copy here: http://sam.zoy.org/wtfpl/
 
 ;; This file is NOT part of GNU Emacs.
@@ -17,25 +17,47 @@
 ;;; Code:
 
 
+(eval-when-compile (require 'dbus))
+
 (defcustom am:usdisk-bin "udisks"
   "udisks binary file.")
 
-
 (defcustom am:disks-mount "--mount"
-  "Option for udisks monitor. See `am:usdisk-bin'.")
-(defcustom am:disks-unmount "--unmount"
   "Option for udisks monitor. See `am:usdisk-bin'.")
 
 (defcustom am:pre-mount-hook nil
-  "Hooks to be called before mounting the drive.")
-(defcustom am:post-mount-hook nil "")
-(defcustom am:pre-unmount-hook nil "")
-(defcustom am:unmount-failed-hook nil "")
-(defcustom am:post-unmount-hook nil "")
+  "Hooks to be called before mounting the drive.
 
+Arguments are:
+
+DESCRIPTION for the drive description given by D-Bus.
+
+DEVICE for the device name such as /desv/sdb1.
+
+UUID drive uuid.
+
+MOUNT-POINT where the drive is mounted. Usually /media/UUID but
+may be different.")
+
+(defcustom am:post-mount-hook nil
+  "Hooks to be called after mounting the drive.
+
+See `am:pre-mount-hook' for arguments.")
+
+(defcustom am:pre-unmount-hook nil
+  "Hooks to be called before unmounting the drive with
+MOUNT-POINT as argument.")
+
+(defcustom am:unmount-failed-hook nil
+  "Hooks to be called when unmount fails (usually when a resource
+ is busy) with the MOINT-POINT as argument.")
+
+(defcustom am:post-unmount-hook nil
+  "Hooks to be called when unmount succeeded with the MOINT-POINT
+as argument.")
 
 (defvar am:mounted-devices nil
-  "List of mounted devices")
+  "List of mounted devices.")
 
 (defun am:post-mount-sentinel (proc change)
   "Sentinel in charge of running next process if previous one succeeded."
@@ -120,10 +142,13 @@
 				       (mapcar 'cdr am:mounted-devices))
 				      nil
 				      t)))
-	 (mount-point (or (car (assoc wanted am:mounted-devices))
+	 (mount-point (or drive
+			  (car (assoc wanted am:mounted-devices))
 			  (car (rassoc wanted am:mounted-devices)))))
 
-    (let* ((cmd-line (list am:usdisk-bin am:disks-unmount mount-point))
+    (run-hook-with-args 'am:pre-unmount-hook mount-point)
+    ;; TODO: Close all buffers under mount-point
+    (let* ((cmd-line (list "umount" mount-point))
 	   (cmd-buf (get-buffer-create (format "Udisk unmounting %s" mount-point)))
 	   (proc (apply 'start-process (car cmd-line)
 			cmd-buf (car cmd-line) (cdr cmd-line))))
