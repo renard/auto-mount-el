@@ -5,7 +5,7 @@
 ;; Author: Sébastien Gross <seb•ɑƬ•chezwam•ɖɵʈ•org>
 ;; Keywords: emacs, 
 ;; Created: 2011-09-22
-;; Last changed: 2011-09-23 09:05:58
+;; Last changed: 2011-09-23 17:38:22
 ;; Licence: WTFPL, grab your copy here: http://sam.zoy.org/wtfpl/
 
 ;; This file is NOT part of GNU Emacs.
@@ -26,9 +26,11 @@
 (defcustom am:disks-unmount "--unmount"
   "Option for udisks monitor. See `am:usdisk-bin'.")
 
-(defcustom am:pre-mount-hook nil "")
+(defcustom am:pre-mount-hook nil
+  "Hooks to be called before mounting the drive.")
 (defcustom am:post-mount-hook nil "")
 (defcustom am:pre-unmount-hook nil "")
+(defcustom am:unmount-failed-hook nil "")
 (defcustom am:post-unmount-hook nil "")
 
 
@@ -92,22 +94,42 @@
 
 
 
+(defun am:unmount-sentinel (proc change)
+  "Sentinel in charge of running next process if previous one succeeded."
+  (when (eq (process-status proc) 'exit)
+    (let ((status  (process-exit-status proc))
+	  (cmd-buf (process-get proc :cmd-buf))
+	  (mount-point (process-get proc :mount-point)))
 
-(defun am:unmount ()
+      (if (not (eq 0 status))
+	  (progn
+	    (set-buffer cmd-buf)
+	    (message (format "Could not unmount %s:\n%s"
+			     mount-point (buffer-string)))
+	    (kill-buffer cmd-buf)
+	    (run-hook-with-args am:unmount-failed-hook mount-point))
+	(run-hook-with-args 'am:post-unmount-hook mount-point)
+	(kill-buffer cmd-buf)))))
+
+(defun am:unmount (&optional drive)
   (interactive)
-  (let* ((wanted (completing-read "Unmount: "
-				 (append 
-				  (mapcar 'car am:mounted-devices)
-				  (mapcar 'cdr am:mounted-devices))
-				 nil
-				 t))
+  (let* ((wanted (or drive
+		     (completing-read "Unmount: "
+				      (append
+				       (mapcar 'car am:mounted-devices)
+				       (mapcar 'cdr am:mounted-devices))
+				      nil
+				      t)))
 	 (mount-point (or (car (assoc wanted am:mounted-devices))
 			  (car (rassoc wanted am:mounted-devices)))))
-    ;; REally do the unmount
-    (message (format "Unmounting %s" mount-point))))
 
-  
-
+    (let* ((cmd-line (list am:usdisk-bin am:disks-unmount mount-point))
+	   (cmd-buf (get-buffer-create (format "Udisk unmounting %s" mount-point)))
+	   (proc (apply 'start-process (car cmd-line)
+			cmd-buf (car cmd-line) (cdr cmd-line))))
+      (process-put proc :cmd-buf cmd-buf)
+      (process-put proc :mount-point mount-point)
+      (set-process-sentinel proc 'am:unmount-sentinel))))
 
 (defun am:dbus-register ()
   ""
