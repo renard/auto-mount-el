@@ -5,7 +5,7 @@
 ;; Author: Sébastien Gross <seb•ɑƬ•chezwam•ɖɵʈ•org>
 ;; Keywords: emacs, 
 ;; Created: 2011-09-22
-;; Last changed: 2011-09-23 17:57:01
+;; Last changed: 2011-09-26 01:26:32
 ;; Licence: WTFPL, grab your copy here: http://sam.zoy.org/wtfpl/
 
 ;; This file is NOT part of GNU Emacs.
@@ -110,9 +110,7 @@ as argument.")
     (setq am:mounted-devices 
 	  (loop for m in am:mounted-devices
 		when (not (string= mount-point (car m)))
-		collect m))
-    ;;Add post umount hooks
-))
+		collect m))))
 
 
 
@@ -132,6 +130,29 @@ as argument.")
 	    (run-hook-with-args am:unmount-failed-hook mount-point))
 	(run-hook-with-args 'am:post-unmount-hook mount-point)
 	(kill-buffer cmd-buf)))))
+
+
+(defun am:get-buffers-in-mount-point (mount-point)
+  "Return a list of all buffer visiting a file or directory under
+MOUNT-POINT."
+  (let* ((mount-point (expand-file-name mount-point))
+	 (mp-length (length mount-point)))
+    (loop for b in (buffer-list)
+	  with bn
+	  do (progn
+	       (set-buffer b)
+	       (setq bn (if (eq 'dired major-mode)
+			    (dired-current-directory)
+			  (buffer-file-name b)))
+	       (when bn (setq bn (expand-file-name bn))))
+	  when (and bn
+		    (<= mp-length
+			(length bn))
+		    (string=
+		     mount-point
+		     (substring bn 0 mp-length)))
+	  collect bn)))
+
 
 (defun am:unmount (&optional drive)
   (interactive)
